@@ -4,23 +4,28 @@ import grpc
 import em_pb2
 import em_pb2_grpc
 import time
-import random
 
-def run():
-    channel = grpc.insecure_channel('localhost:50051')
-    stub = em_pb2_grpc.ExclusionManagerStub(channel)
+def run_client(process_id, port, peer_ports):
+    time.sleep(2)  # Give the server time to start
 
-    timestamp = int(time.time())
-    process_id = f"Process-{random.randint(1,100)}"
-    resource_id = "resA"
+    for peer_port in peer_ports:
+        try:
+            channel = grpc.insecure_channel(f'localhost:{peer_port}')
+            stub = em_pb2_grpc.ExclusionManagerStub(channel)
 
-    print(f"[CLIENT] Sending RequestEntry from {process_id}")
-    response = stub.RequestEntry(em_pb2.RequestMessage(
-        timestamp=timestamp,
-        process_id=process_id,
-        resource_id=resource_id
-    ))
-    print(f"[CLIENT] Received reply: granted={response.granted}, message='{response.message}'")
+            timestamp = int(time.time())
+            resource_id = "resA"
+
+            print(f"[CLIENT {process_id}] Sending RequestEntry to port {peer_port}")
+            response = stub.RequestEntry(em_pb2.RequestMessage(
+                timestamp=timestamp,
+                process_id=process_id,
+                resource_id=resource_id
+            ))
+            print(f"[CLIENT {process_id}] Received from port {peer_port}: granted={response.granted}, message='{response.message}'")
+
+        except grpc.RpcError as e:
+            print(f"[CLIENT {process_id}] Failed to connect to port {peer_port}: {e}")
 
 if __name__ == "__main__":
-    run()
+    run_client("Manual-Client", 50051, [50052])

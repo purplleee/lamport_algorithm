@@ -3,7 +3,6 @@
 import grpc
 from concurrent import futures
 import time
-
 import em_pb2
 import em_pb2_grpc
 
@@ -44,12 +43,12 @@ class ExclusionManagerServicer(em_pb2_grpc.ExclusionManagerServicer):
             pending_requests=[]
         )
 
-def serve():
+def serve(process_id, port, peers):
     server = grpc.server(futures.ThreadPoolExecutor(max_workers=5))
     em_pb2_grpc.add_ExclusionManagerServicer_to_server(ExclusionManagerServicer(), server)
-    server.add_insecure_port('[::]:50051')
+    server.add_insecure_port(f'[::]:{port}')
     server.start()
-    print("[SERVER] Listening on port 50051")
+    print(f"[SERVER {process_id}] Listening on port {port}")
     try:
         while True:
             time.sleep(86400)
@@ -57,4 +56,4 @@ def serve():
         server.stop(0)
 
 if __name__ == "__main__":
-    serve()
+    serve("Manual-Server", 50051, [])
