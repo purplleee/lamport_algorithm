@@ -2,7 +2,9 @@
 import time
 import random
 import threading
+
 from logical_clock import LogicalClock, LogicalClockWithHistory
+from agrawala_clock import AgrawalaClock
 
 def test_basic_operations():
     print("="*20, "TEST: Basic Operations", "="*20)
@@ -81,11 +83,54 @@ def test_thread_safety():
     print(f"Final clock time: {clock.get_time()}")
     print(f"Total operations: {len(results)}")
 
+def test_agrawala_logic():
+    print("="*20, "TEST: Agrawala Clock", "="*20)
+    from agrawala_clock import AgrawalaClock
+
+    print("Creating clocks...")
+    pA = AgrawalaClock("A")
+    pB = AgrawalaClock("B")
+
+    print("A requests CS")
+    tsA = pA.request_critical_section()
+    print(f"A requests CS at {tsA}")
+
+    print("B receives A's request")
+    pB.sync_with_received_message(tsA, "A")
+
+    print("B requests CS")
+    tsB = pB.request_critical_section()
+    print(f"B requests CS at {tsB}")
+
+    print("A receives B's request")
+    pA.sync_with_received_message(tsB, "B")
+
+    print("Checking if B should defer reply to A")
+    should_B_defer = pB.should_defer_reply(tsA, "A")
+    print(f"B should defer reply to A? {should_B_defer}")
+
+    print("Checking if A should defer reply to B")
+    should_A_defer = pA.should_defer_reply(tsB, "B")
+    print(f"A should defer reply to B? {should_A_defer}")
+
+    print("A defers reply to B")
+    pA.defer_reply_to("B")
+    print(f"A's deferred replies: {pA.get_deferred_replies()}")
+
+    print("A releases critical section")
+    pA.release_critical_section()
+    print(f"A released CS. Deferred replies after release: {pA.get_deferred_replies()}")
+
+    print("Printing histories")
+    pA.print_history()
+    pB.print_history()
+
 def run_all_tests():
     test_basic_operations()
     test_lamport_rules()
     test_concurrent_processes()
     test_thread_safety()
+    test_agrawala_logic()
     print("All tests done.")
 
 if __name__ == "__main__":
