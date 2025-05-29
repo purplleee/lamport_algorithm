@@ -1,0 +1,52 @@
+syntax = "proto3";
+
+package exclusion_manager;
+
+// Request message for requesting entry to critical section
+message RequestMessage {
+    int64 timestamp = 1;        // Lamport timestamp
+    string process_id = 2;      // Unique identifier for the requesting process
+    string resource_id = 3;     // Optional: ID of the resource being requested
+}
+
+// Reply message for acknowledging a request
+message ReplyMessage {
+    int64 timestamp = 1;        // Lamport timestamp of the reply
+    string process_id = 2;      // ID of the process sending the reply
+    bool granted = 3;           // Whether the request is granted (optional field)
+    string message = 4;         // Optional acknowledgment message
+}
+
+// Release message for releasing the critical section
+message ReleaseMessage {
+    int64 timestamp = 1;        // Lamport timestamp of the release
+    string process_id = 2;      // ID of the process releasing the resource
+    string resource_id = 3;     // Optional: ID of the resource being released
+}
+
+// Service definition for mutual exclusion coordination
+service ExclusionManager {
+    // Request entry to critical section
+    rpc RequestEntry(RequestMessage) returns (ReplyMessage);
+    
+    // Reply to a request (used in some algorithms)
+    rpc ReplyEntry(RequestMessage) returns (ReplyMessage);
+    
+    // Release critical section
+    rpc ReleaseEntry(ReleaseMessage) returns (ReplyMessage);
+    
+    // Optional: Health check or status query
+    rpc GetStatus(StatusRequest) returns (StatusResponse);
+}
+
+// Optional messages for status checking
+message StatusRequest {
+    string process_id = 1;
+}
+
+message StatusResponse {
+    string process_id = 1;
+    bool in_critical_section = 2;
+    int64 current_timestamp = 3;
+    repeated string pending_requests = 4;
+}
