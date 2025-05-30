@@ -32,18 +32,12 @@ def run_client(process_id, port, peer_ports, network_delay_range=(1, 3)):
         print(f"❌ [{process_id}] ERROR: Could not get servicer instance")
         return
     
-    # Simulate multiple critical section requests
-    resources = ["ResourceA", "ResourceB", "ResourceA"]  # Test same resource multiple times
+    # REDUCED: Only one critical section request
+    resources = ["ResourceA"]  # Single request instead of 3
     
     for i, resource_id in enumerate(resources):
         try:
             print(f"\n📋 [{process_id}] === REQUEST {i+1}/{len(resources)} ===")
-            
-            # Add some random delay between requests
-            if i > 0:
-                delay = random.uniform(2, 4)
-                print(f"⏸️  [{process_id}] Waiting {delay:.1f}s before next request...")
-                time.sleep(delay)
             
             # Request critical section access - this handles the entire protocol
             servicer.request_critical_section(resource_id)
@@ -51,10 +45,11 @@ def run_client(process_id, port, peer_ports, network_delay_range=(1, 3)):
         except Exception as e:
             print(f"❌ [{process_id}] Error during critical section request: {e}")
     
-    # Optional: Query status from peers
+    # Optional: Query status from peers (also reduced)
     print(f"\n📊 [{process_id}] === STATUS QUERIES ===")
     
-    status_queries = min(2, len(peer_ports))
+    # REDUCED: Only query 1 peer instead of 2
+    status_queries = min(1, len(peer_ports))
     selected_ports = random.sample(peer_ports, status_queries) if peer_ports else []
     
     for peer_port in selected_ports:
