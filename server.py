@@ -1,4 +1,4 @@
-# server.py - Enhanced with Mutual Exclusion Logic
+# server.py - Clean Enhanced Mutual Exclusion Implementation
 
 import grpc
 from concurrent import futures
@@ -20,8 +20,6 @@ class Request:
     resource_id: str
     
     def __lt__(self, other):
-        # For priority queue ordering: earlier timestamp first
-        # If timestamps are equal, use process_id for tie-breaking
         if self.timestamp == other.timestamp:
             return self.process_id < other.process_id
         return self.timestamp < other.timestamp
@@ -36,14 +34,14 @@ class MutualExclusionState:
         self.request_queue = []
         
         # Track replies received for our own requests
-        self.pending_replies: Dict[str, set] = {}  # resource_id -> set of process_ids we're waiting for
+        self.pending_replies: Dict[str, set] = {}
         
         # Track if we're in critical section
         self.in_critical_section = False
         self.current_resource = None
         
         # Track our own requests
-        self.our_requests: Dict[str, Request] = {}  # resource_id -> our request
+        self.our_requests: Dict[str, Request] = {}
         
     def add_request(self, request: Request):
         """Add a request to the priority queue."""
@@ -56,8 +54,8 @@ class MutualExclusionState:
             self.request_queue.append(request)
             self.request_queue.sort()
             
-            print(f"[MUTEX] Added request to queue: {request}")
-            self._print_queue_state()
+            print(f"🔒 [{self.process_id}] Queue: {request.process_id} added (T={request.timestamp}, R={request.resource_id})")
+            self._print_queue_status()
     
     def remove_request(self, process_id: str, resource_id: str):
         """Remove a request from the queue."""
@@ -67,8 +65,8 @@ class MutualExclusionState:
                                 if not (r.process_id == process_id and r.resource_id == resource_id)]
             
             if len(self.request_queue) < original_len:
-                print(f"[MUTEX] Removed request from {process_id} for resource {resource_id}")
-                self._print_queue_state()
+                print(f"🔓 [{self.process_id}] Queue: {process_id} removed from {resource_id}")
+                self._print_queue_status()
     
     def can_enter_critical_section(self, resource_id: str) -> bool:
         """Check if we can enter critical section for the given resource."""
@@ -76,7 +74,6 @@ class MutualExclusionState:
             if self.in_critical_section:
                 return False
                 
-            # Check if we have a request for this resource
             if resource_id not in self.our_requests:
                 return False
             
@@ -93,8 +90,6 @@ class MutualExclusionState:
                 received_replies = self.pending_replies[resource_id]
                 
                 if not expected_replies.issubset(received_replies):
-                    missing = expected_replies - received_replies
-                    print(f"[MUTEX] Still waiting for replies from: {missing}")
                     return False
             
             return True
@@ -104,7 +99,7 @@ class MutualExclusionState:
         with self.lock:
             self.in_critical_section = True
             self.current_resource = resource_id
-            print(f"[MUTEX] *** ENTERED CRITICAL SECTION for resource {resource_id} ***")
+            print(f"🎯 [{self.process_id}] *** ENTERED CRITICAL SECTION: {resource_id} ***")
     
     def exit_critical_section(self):
         """Exit critical section."""
@@ -122,8 +117,7 @@ class MutualExclusionState:
             if resource_id in self.pending_replies:
                 del self.pending_replies[resource_id]
             
-            print(f"[MUTEX] *** EXITED CRITICAL SECTION for resource {resource_id} ***")
-            self._print_queue_state()
+            print(f"✅ [{self.process_id}] *** EXITED CRITICAL SECTION: {resource_id} ***")
     
     def add_reply(self, resource_id: str, from_process: str):
         """Record a reply received for our request."""
@@ -132,37 +126,31 @@ class MutualExclusionState:
                 self.pending_replies[resource_id] = set()
             
             self.pending_replies[resource_id].add(from_process)
-            print(f"[MUTEX] Received reply from {from_process} for resource {resource_id}")
-            print(f"[MUTEX] Replies so far: {self.pending_replies[resource_id]}")
+            print(f"💬 [{self.process_id}] Reply from {from_process} for {resource_id} ({len(self.pending_replies[resource_id])} total)")
     
     def add_our_request(self, request: Request):
         """Add our own request."""
         with self.lock:
             self.our_requests[request.resource_id] = request
             self.add_request(request)
-            
-            # Initialize pending replies tracking
             self.pending_replies[request.resource_id] = set()
     
-    def _print_queue_state(self):
+    def _print_queue_status(self):
         """Print current state of the request queue."""
-        print(f"[MUTEX] Current queue state:")
-        for i, req in enumerate(self.request_queue):
-            marker = " <- OURS" if req.process_id == self.process_id else ""
-            print(f"[MUTEX]   {i+1}. T={req.timestamp}, P={req.process_id}, R={req.resource_id}{marker}")
-        if not self.request_queue:
-            print(f"[MUTEX]   (empty)")
+        if self.request_queue:
+            next_req = self.request_queue[0]
+            marker = " (OURS)" if next_req.process_id == self.process_id else ""
+            print(f"    Queue head: {next_req.process_id} T={next_req.timestamp}{marker} | Total: {len(self.request_queue)}")
 
 def simulate_processing_delay(min_delay=0.5, max_delay=2.0):
     """Simulate server processing time."""
     delay = random.uniform(min_delay, max_delay)
-    print(f"        [SERVER-PROCESSING] Processing delay: {delay:.2f}s")
     time.sleep(delay)
 
 def simulate_critical_section_work(duration_range=(2, 5)):
     """Simulate work in critical section."""
     duration = random.uniform(*duration_range)
-    print(f"        [CRITICAL-SECTION] Working for {duration:.2f}s...")
+    print(f"    ⚙️  Working in critical section for {duration:.1f}s...")
     time.sleep(duration)
 
 class ExclusionManagerServicer(em_pb2_grpc.ExclusionManagerServicer):
@@ -174,14 +162,10 @@ class ExclusionManagerServicer(em_pb2_grpc.ExclusionManagerServicer):
         self.mutex_state = MutualExclusionState(process_id, peer_ports)
 
     def RequestEntry(self, request, context):
-        print(f"\n[SERVER {self.process_id}] ===== Incoming RequestEntry =====")
-        print(f"[SERVER {self.process_id}] Received request from {request.process_id}")
-        print(f"[SERVER {self.process_id}] Request timestamp: {request.timestamp}")
-        print(f"[SERVER {self.process_id}] Resource: '{request.resource_id}'")
+        print(f"📨 [{self.process_id}] Request from {request.process_id} (T={request.timestamp}, R={request.resource_id})")
         
         # Update logical clock for received message
         updated_time = self.clock.update(request.timestamp, sender_id=request.process_id)
-        print(f"[SERVER {self.process_id}] Clock updated to: {updated_time}")
         
         # Add request to our queue
         incoming_request = Request(
@@ -194,47 +178,23 @@ class ExclusionManagerServicer(em_pb2_grpc.ExclusionManagerServicer):
         # Simulate processing delay
         simulate_processing_delay(*self.processing_delay_range)
         
-        # Send reply (increment clock for sending reply)
-        reply_timestamp = self.clock.tick(f"sending reply to {request.process_id}")
+        # Send reply
+        reply_timestamp = self.clock.tick(f"reply to {request.process_id}")
         
-        print(f"[SERVER {self.process_id}] Sending reply with timestamp: {reply_timestamp}")
-        print(f"[SERVER {self.process_id}] ===== End RequestEntry Processing =====")
-        
-        return em_pb2.ReplyMessage(
-            timestamp=reply_timestamp,
-            process_id=self.process_id,
-            granted=True,
-            message=f"Request acknowledged by {self.process_id}"
-        )
-
-    def ReplyEntry(self, request, context):
-        print(f"\n[SERVER {self.process_id}] Received ReplyEntry from {request.process_id}")
-        
-        # Update logical clock
-        updated_time = self.clock.update(request.timestamp, sender_id=request.process_id)
-        print(f"[SERVER {self.process_id}] Clock updated to: {updated_time}")
-        
-        # This method would be used in some mutual exclusion algorithms
-        # For Lamport's algorithm, replies are handled differently
-        
-        reply_timestamp = self.clock.tick(f"acknowledging ReplyEntry from {request.process_id}")
+        print(f"📤 [{self.process_id}] Reply to {request.process_id} (T={reply_timestamp})")
         
         return em_pb2.ReplyMessage(
             timestamp=reply_timestamp,
             process_id=self.process_id,
             granted=True,
-            message="Reply acknowledged"
+            message=f"ACK from {self.process_id}"
         )
 
     def ReleaseEntry(self, request, context):
-        print(f"\n[SERVER {self.process_id}] ===== Incoming ReleaseEntry =====")
-        print(f"[SERVER {self.process_id}] Received release from {request.process_id}")
-        print(f"[SERVER {self.process_id}] Release timestamp: {request.timestamp}")
-        print(f"[SERVER {self.process_id}] Resource: '{request.resource_id}'")
+        print(f"🔓 [{self.process_id}] Release from {request.process_id} (T={request.timestamp}, R={request.resource_id})")
         
         # Update logical clock
         updated_time = self.clock.update(request.timestamp, sender_id=request.process_id)
-        print(f"[SERVER {self.process_id}] Clock updated to: {updated_time}")
         
         # Remove the released request from our queue
         self.mutex_state.remove_request(request.process_id, request.resource_id)
@@ -242,26 +202,22 @@ class ExclusionManagerServicer(em_pb2_grpc.ExclusionManagerServicer):
         # Check if we can now enter critical section
         self._check_and_enter_critical_section()
         
-        # Simulate processing
         simulate_processing_delay(*self.processing_delay_range)
         
-        reply_timestamp = self.clock.tick(f"acknowledging release from {request.process_id}")
-        
-        print(f"[SERVER {self.process_id}] ===== End ReleaseEntry Processing =====")
+        reply_timestamp = self.clock.tick(f"ack release from {request.process_id}")
         
         return em_pb2.ReplyMessage(
             timestamp=reply_timestamp,
             process_id=self.process_id,
             granted=True,
-            message="Release acknowledged"
+            message="Release ACK"
         )
 
     def GetStatus(self, request, context):
-        current_time = self.clock.tick(f"status query from {request.process_id}")
+        current_time = self.clock.tick(f"status query")
         
         with self.mutex_state.lock:
-            pending = [f"{r.process_id}:{r.resource_id}:T{r.timestamp}" 
-                      for r in self.mutex_state.request_queue]
+            pending = [f"{r.process_id}:{r.resource_id}" for r in self.mutex_state.request_queue]
         
         return em_pb2.StatusResponse(
             process_id=self.process_id,
@@ -272,10 +228,10 @@ class ExclusionManagerServicer(em_pb2_grpc.ExclusionManagerServicer):
     
     def request_critical_section(self, resource_id: str):
         """Request access to critical section (called by client thread)."""
-        print(f"\n[MUTEX {self.process_id}] ===== Requesting Critical Section =====")
+        print(f"\n🚪 [{self.process_id}] Requesting access to {resource_id}")
         
         # Create our request
-        request_timestamp = self.clock.tick(f"requesting access to {resource_id}")
+        request_timestamp = self.clock.tick(f"request {resource_id}")
         our_request = Request(
             timestamp=request_timestamp,
             process_id=self.process_id,
@@ -289,6 +245,7 @@ class ExclusionManagerServicer(em_pb2_grpc.ExclusionManagerServicer):
         self._broadcast_request(our_request)
         
         # Wait until we can enter critical section
+        print(f"⏳ [{self.process_id}] Waiting for access to {resource_id}...")
         self._wait_for_critical_section_access(resource_id)
         
         # Enter critical section
@@ -301,59 +258,49 @@ class ExclusionManagerServicer(em_pb2_grpc.ExclusionManagerServicer):
         self.mutex_state.exit_critical_section()
         self._broadcast_release(resource_id)
         
-        print(f"[MUTEX {self.process_id}] ===== Critical Section Complete =====")
+        print(f"🏁 [{self.process_id}] Completed access to {resource_id}\n")
     
     def _broadcast_request(self, request: Request):
         """Send request to all peer processes."""
-        print(f"[MUTEX {self.process_id}] Broadcasting request to all peers...")
+        print(f"📡 [{self.process_id}] Broadcasting request to {len(self.peer_ports)} peers")
         
         for peer_port in self.peer_ports:
             try:
                 channel = grpc.insecure_channel(f'localhost:{peer_port}')
                 stub = em_pb2_grpc.ExclusionManagerStub(channel)
                 
-                # Send request and handle reply
                 reply = stub.RequestEntry(em_pb2.RequestMessage(
                     timestamp=request.timestamp,
                     process_id=request.process_id,
                     resource_id=request.resource_id
                 ))
                 
-                # Update clock based on reply
+                # Update clock and record reply
                 updated_time = self.clock.update(reply.timestamp, sender_id=reply.process_id)
-                print(f"[MUTEX {self.process_id}] Received reply from port {peer_port}, clock: {updated_time}")
-                
-                # Record the reply
                 self.mutex_state.add_reply(request.resource_id, reply.process_id)
                 
                 channel.close()
                 
             except Exception as e:
-                print(f"[MUTEX {self.process_id}] Failed to send request to port {peer_port}: {e}")
+                print(f"❌ [{self.process_id}] Failed to send request to port {peer_port}: {e}")
     
     def _wait_for_critical_section_access(self, resource_id: str):
         """Wait until we can access the critical section."""
-        print(f"[MUTEX {self.process_id}] Waiting for critical section access...")
-        
         while not self.mutex_state.can_enter_critical_section(resource_id):
-            time.sleep(0.1)  # Small delay to avoid busy waiting
-        
-        print(f"[MUTEX {self.process_id}] Conditions met for critical section entry!")
+            time.sleep(0.1)
     
     def _check_and_enter_critical_section(self):
         """Check if we can enter critical section for any of our pending requests."""
         with self.mutex_state.lock:
             for resource_id in list(self.mutex_state.our_requests.keys()):
                 if self.mutex_state.can_enter_critical_section(resource_id):
-                    print(f"[MUTEX {self.process_id}] Can now enter critical section for {resource_id}!")
-                    # Note: In a real implementation, you might want to signal a waiting thread
-                    # For this demo, we'll let the waiting loop in _wait_for_critical_section_access handle it
+                    print(f"✨ [{self.process_id}] Can now access {resource_id}!")
     
     def _broadcast_release(self, resource_id: str):
         """Send release message to all peer processes."""
-        print(f"[MUTEX {self.process_id}] Broadcasting release to all peers...")
+        print(f"📡 [{self.process_id}] Broadcasting release of {resource_id}")
         
-        release_timestamp = self.clock.tick(f"releasing {resource_id}")
+        release_timestamp = self.clock.tick(f"release {resource_id}")
         
         for peer_port in self.peer_ports:
             try:
@@ -366,14 +313,11 @@ class ExclusionManagerServicer(em_pb2_grpc.ExclusionManagerServicer):
                     resource_id=resource_id
                 ))
                 
-                # Update clock based on reply
                 updated_time = self.clock.update(reply.timestamp, sender_id=reply.process_id)
-                print(f"[MUTEX {self.process_id}] Release acknowledged by port {peer_port}, clock: {updated_time}")
-                
                 channel.close()
                 
             except Exception as e:
-                print(f"[MUTEX {self.process_id}] Failed to send release to port {peer_port}: {e}")
+                print(f"❌ [{self.process_id}] Failed to send release to port {peer_port}: {e}")
 
 def serve(process_id, port, peers, processing_delay_range=(0.5, 2.0)):
     server = grpc.server(futures.ThreadPoolExecutor(max_workers=10))
@@ -382,9 +326,10 @@ def serve(process_id, port, peers, processing_delay_range=(0.5, 2.0)):
     
     server.add_insecure_port(f'[::]:{port}')
     server.start()
-    print(f"[SERVER {process_id}] Started with mutual exclusion support on port {port}")
-    print(f"[SERVER {process_id}] Processing delays: {processing_delay_range[0]}-{processing_delay_range[1]}s")
-    print(f"[SERVER {process_id}] Peers: {peers}")
+    
+    print(f"🚀 [{process_id}] Server started on port {port}")
+    print(f"    Processing delays: {processing_delay_range[0]}-{processing_delay_range[1]}s")
+    print(f"    Peers: {peers}")
     
     # Store servicer globally so client can access it
     global _servicer
@@ -394,7 +339,8 @@ def serve(process_id, port, peers, processing_delay_range=(0.5, 2.0)):
         while True:
             time.sleep(86400)
     except KeyboardInterrupt:
-        print(f"\n[SERVER {process_id}] Shutting down...")
+        print(f"\n🛑 [{process_id}] Shutting down...")
+        print(f"\n📊 [{process_id}] FINAL CLOCK HISTORY:")
         servicer.clock.print_history()
         server.stop(0)
 

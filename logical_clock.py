@@ -12,7 +12,7 @@ class LogicalClock:
             return self.time
 
     def update(self, received_time):
-        """Update clock based on received timestamp - FIXED VERSION."""
+        """Update clock based on received timestamp - Lamport clock rule."""
         with self.lock:
             # Lamport clock rule: local_time = max(local_time, received_time) + 1
             # The +1 represents the event of receiving the message
@@ -43,9 +43,10 @@ class LogicalClockWithHistory(LogicalClock):
         old_time = self.time
         new_time = super().update(received_time)
         
-        desc = f"RECEIVED from {sender_id}: msg_ts={received_time}, old_local={old_time}, new_local={new_time}"
-        if sender_id is None:
-            desc = f"RECEIVED: msg_ts={received_time}, old_local={old_time}, new_local={new_time}"
+        if sender_id:
+            desc = f"RECV from {sender_id}: msg_T={received_time}, local: {old_time}→{new_time}"
+        else:
+            desc = f"RECV: msg_T={received_time}, local: {old_time}→{new_time}"
             
         with self.lock:
             self.history.append((new_time, desc))
@@ -54,8 +55,9 @@ class LogicalClockWithHistory(LogicalClock):
     def print_history(self):
         """Print complete history of clock events."""
         with self.lock:
-            print(f"\n=== LAMPORT CLOCK HISTORY for {self.process_id} ===")
+            print(f"⏰ LAMPORT CLOCK HISTORY - {self.process_id}")
+            print("=" * 60)
             for timestamp, desc in self.history:
-                print(f"  T={timestamp:2d}: {desc}")
+                print(f"T={timestamp:2d}: {desc}")
             print(f"Final logical time: {self.time}")
             print("=" * 60)
